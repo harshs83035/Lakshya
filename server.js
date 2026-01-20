@@ -30,7 +30,7 @@ app.post('/api/match', async (req, res) => {
         console.log(`Processing request for: ${user_name}`);
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.0-pro"
+            model: "gemini-2.0-flash-exp"
         });
 
         const prompt = `
