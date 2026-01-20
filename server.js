@@ -23,10 +23,10 @@ app.post('/api/match', async (req, res) => {
         console.log(`Processing request for: ${user_name}`);
         
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
-            // We request JSON, but sometimes AI adds markdown anyway
-            generationConfig: { responseMimeType: "application/json" }
-        });
+    model: "gemini-1.5-flash",
+    generationConfig: { responseMimeType: "application/json" }
+});
+
 
         const prompt = `
         You are a **BNI Power Team Mapper**.
