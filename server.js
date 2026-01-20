@@ -5,13 +5,13 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
-// Increase payload limit to prevent 413 errors
+// Increase payload limit
 app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 
 // --- API KEY CHECK ---
 if (!process.env.GEMINI_API_KEY) {
-    console.error("❌ FATAL ERROR: GEMINI_API_KEY is missing in Render Environment Variables!");
+    console.error("❌ FATAL ERROR: GEMINI_API_KEY is missing!");
 } else {
     console.log("✅ GEMINI_API_KEY loaded successfully!");
 }
@@ -33,7 +33,10 @@ app.post('/api/match', async (req, res) => {
     try {
         const { user_name, business_name, description, ideal_customer, roster_subset } = req.body;
 
-        console.log(`Processing request for: ${user_name}`);
+        console.log(`Processing request for: ${user_name || 'N/A'}`);
+
+        // --- Trim roster to max 30 candidates to avoid token limits ---
+        const rosterTrimmed = (roster_subset || []).slice(0, 30);
 
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -52,9 +55,9 @@ What they do: ${description}
 Ideal Client: ${ideal_customer || "Not specified"}
 
 ROSTER CANDIDATES (JSON):
-${JSON.stringify(roster_subset)}
+${JSON.stringify(rosterTrimmed)}
 
-OUTPUT SCHEMA (JSON Only):
+OUTPUT SCHEMA (JSON ONLY):
 {
   "user_profile": {
     "detected_primary_category": "string",
@@ -71,13 +74,13 @@ OUTPUT SCHEMA (JSON Only):
     }
   ]
 }
-        `;
+`;
 
-        // --- FIXED: use generateText, not generateContent ---
+        // --- Correct call for Gemini ---
         const result = await model.generateText(prompt, { maxOutputTokens: 1024 });
         let text = result.text;
 
-        // Remove ```json or ``` markers
+        // Remove markdown code blocks
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
         console.log("AI Response received successfully");
@@ -88,7 +91,10 @@ OUTPUT SCHEMA (JSON Only):
         } catch (parseError) {
             console.error("JSON Parse Error:", parseError);
             console.error("Raw Text was:", text);
-            throw new Error("AI returned invalid JSON format");
+            return res.status(500).json({
+                error: "AI returned invalid JSON format",
+                raw_response: text
+            });
         }
 
     } catch (error) {
