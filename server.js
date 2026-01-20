@@ -9,34 +9,27 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 
-// --- API KEY CHECK ---
+// Check API Key
 if (!process.env.GEMINI_API_KEY) {
-    console.error("❌ FATAL ERROR: GEMINI_API_KEY is missing!");
+    console.error("❌ GEMINI_API_KEY missing!");
+    process.exit(1); // Stop server if key missing
 } else {
-    console.log("✅ GEMINI_API_KEY loaded successfully!");
+    console.log("✅ GEMINI_API_KEY loaded!");
 }
 
-// --- AI CLIENT ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// --- TEST KEY ROUTE ---
+// Test route
 app.get('/test-key', (req, res) => {
-    if (process.env.GEMINI_API_KEY) {
-        res.send({ status: "OK", message: "API key is loaded!" });
-    } else {
-        res.status(500).send({ status: "Error", message: "API key not found!" });
-    }
+    res.json({ status: "OK", message: "API key is loaded!" });
 });
 
-// --- POWER TEAM MATCH ROUTE ---
+// Main AI route
 app.post('/api/match', async (req, res) => {
     try {
         const { user_name, business_name, description, ideal_customer, roster_subset } = req.body;
 
-        console.log(`Processing request for: ${user_name || 'N/A'}`);
-
-        // --- Trim roster to max 30 candidates to avoid token limits ---
-        const rosterTrimmed = (roster_subset || []).slice(0, 30);
+        console.log(`Processing request for: ${user_name}`);
 
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -55,9 +48,9 @@ What they do: ${description}
 Ideal Client: ${ideal_customer || "Not specified"}
 
 ROSTER CANDIDATES (JSON):
-${JSON.stringify(rosterTrimmed)}
+${JSON.stringify(roster_subset)}
 
-OUTPUT SCHEMA (JSON ONLY):
+OUTPUT SCHEMA (JSON Only):
 {
   "user_profile": {
     "detected_primary_category": "string",
@@ -73,41 +66,34 @@ OUTPUT SCHEMA (JSON ONLY):
       "referral_angle": "string"
     }
   ]
-}
-`;
+}`;
 
-        // --- Correct call for Gemini ---
+        // ✅ Use generateText (not generateContent)
         const result = await model.generateText(prompt, { maxOutputTokens: 1024 });
         let text = result.text;
 
-        // Remove markdown code blocks
+        // Remove ```json markers if any
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
-        console.log("AI Response received successfully");
-
+        // Parse JSON safely
         try {
             const jsonData = JSON.parse(text);
             res.json(jsonData);
         } catch (parseError) {
             console.error("JSON Parse Error:", parseError);
-            console.error("Raw Text was:", text);
-            return res.status(500).json({
-                error: "AI returned invalid JSON format",
-                raw_response: text
+            console.error("Raw AI Text:", text);
+            res.status(500).json({
+                error: "AI returned invalid JSON",
+                details: parseError.message,
+                raw: text
             });
         }
 
     } catch (error) {
-        console.error("SERVER ERROR DETAILS:", error);
-        res.status(500).json({
-            error: "Server Error",
-            details: error.message
-        });
+        console.error("SERVER ERROR:", error);
+        res.status(500).json({ error: "Server Error", details: error.message });
     }
 });
 
-// --- START SERVER ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`✅ Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
