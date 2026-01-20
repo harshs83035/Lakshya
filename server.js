@@ -1,3 +1,28 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const app = express();
+
+app.use(express.json({ limit: '10mb' }));
+app.use(cors());
+
+if (!process.env.GEMINI_API_KEY) {
+    console.error("❌ GEMINI_API_KEY missing!");
+    process.exit(1);
+}
+
+console.log("✅ GEMINI_API_KEY loaded!");
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// -------- TEST ROUTE --------
+app.get('/test-key', (req, res) => {
+    res.json({ status: "OK", message: "API key is loaded!" });
+});
+
+// -------- MAIN AI ROUTE --------
 app.post('/api/match', async (req, res) => {
     try {
         const { user_name, business_name, description, ideal_customer, roster_subset } = req.body;
@@ -42,7 +67,6 @@ Return ONLY JSON in this format:
 
         const result = await model.generateContent(prompt);
 
-        // ---- MOST STABLE RESPONSE EXTRACTION ----
         let text = "";
 
         if (result.response && result.response.candidates) {
@@ -51,7 +75,6 @@ Return ONLY JSON in this format:
             throw new Error("Invalid AI response format");
         }
 
-        // Clean markdown if present
         text = text.replace(/```json/g, '')
                    .replace(/```/g, '')
                    .trim();
@@ -71,3 +94,7 @@ Return ONLY JSON in this format:
         });
     }
 });
+
+// -------- START SERVER --------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
