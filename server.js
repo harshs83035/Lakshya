@@ -1,6 +1,35 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+
+console.log("🔑 Checking GEMINI_API_KEY...");
+if (!process.env.GEMINI_API_KEY) {
+    console.error("❌ GEMINI_API_KEY is missing!");
+} else {
+    console.log("✅ GEMINI_API_KEY is loaded successfully!");
+    console.log("First 4 characters of key:", process.env.GEMINI_API_KEY.slice(0,4), "… (hidden for security)");
+}
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+app.get('/test-key', (req, res) => {
+    if (process.env.GEMINI_API_KEY) {
+        res.send({ status: "OK", message: "API key is loaded!" });
+    } else {
+        res.status(500).send({ status: "Error", message: "API key not found!" });
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`✅ Server running on port ${PORT}`);
+});
+
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
