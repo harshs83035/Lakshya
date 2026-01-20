@@ -5,34 +5,46 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
-// Increase payload limit
-app.use(express.json({ limit: '10mb' }));
+// ------------------------
+// Middleware
+// ------------------------
+app.use(express.json({ limit: '10mb' })); // Prevent payload errors
 app.use(cors());
 
+// ------------------------
 // Check API Key
+// ------------------------
 if (!process.env.GEMINI_API_KEY) {
-    console.error("❌ GEMINI_API_KEY missing!");
-    process.exit(1); // Stop server if key missing
+    console.error("❌ GEMINI_API_KEY missing! Add it to Render environment variables.");
+    process.exit(1);
 } else {
-    console.log("✅ GEMINI_API_KEY loaded!");
+    console.log("✅ GEMINI_API_KEY loaded successfully!");
 }
 
+// ------------------------
+// Initialize AI Client
+// ------------------------
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Test route
+// ------------------------
+// Test Route
+// ------------------------
 app.get('/test-key', (req, res) => {
     res.json({ status: "OK", message: "API key is loaded!" });
 });
 
-// Main AI route
+// ------------------------
+// Main AI Route
+// ------------------------
 app.post('/api/match', async (req, res) => {
     try {
         const { user_name, business_name, description, ideal_customer, roster_subset } = req.body;
 
         console.log(`Processing request for: ${user_name}`);
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
+        // ------------------------
+        // Compose prompt
+        // ------------------------
         const prompt = `
 You are a **BNI Power Team Mapper**.
 
@@ -68,14 +80,27 @@ OUTPUT SCHEMA (JSON Only):
   ]
 }`;
 
-        // ✅ Use generateText (not generateContent)
-        const result = await model.generateText(prompt, { maxOutputTokens: 1024 });
-        let text = result.text;
+        // ------------------------
+        // AI Call with timeout (60s)
+        // ------------------------
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-        // Remove ```json markers if any
+        const result = await genAI.text.generate({
+            model: "gemini-1.5-flash",
+            prompt,
+            temperature: 0,
+            max_output_tokens: 1024,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        // ------------------------
+        // Parse AI response
+        // ------------------------
+        let text = result.output[0].content[0].text;
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
-        // Parse JSON safely
         try {
             const jsonData = JSON.parse(text);
             res.json(jsonData);
@@ -95,5 +120,8 @@ OUTPUT SCHEMA (JSON Only):
     }
 });
 
+// ------------------------
+// Start Server
+// ------------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
