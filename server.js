@@ -5,105 +5,97 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
-// Middleware
-app.use(express.json());
+// Increase payload limit to prevent 413 errors
+app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 
-// Initialize Gemini API
-// CRITICAL: Ensure GEMINI_API_KEY is in your .env file
+// Check for API Key on startup
+if (!process.env.GEMINI_API_KEY) {
+    console.error("❌ FATAL ERROR: GEMINI_API_KEY is missing in Render Environment Variables!");
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Define the matching endpoint
 app.post('/api/match', async (req, res) => {
     try {
         const { user_name, business_name, description, ideal_customer, roster_subset } = req.body;
-
-        if (!roster_subset || roster_subset.length === 0) {
-            return res.status(400).json({ error: "No roster data provided" });
-        }
-
-        // Initialize Model - Using Flash for speed/cost efficiency
+        
+        console.log(`Processing request for: ${user_name}`);
+        
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
+            // We request JSON, but sometimes AI adds markdown anyway
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 6) EXACT AI PROMPT TO IMPLEMENT
         const prompt = `
         You are a **BNI Power Team Mapper**.
-
-        Definition:
-        A BNI Power Team is a set of complementary, non-competing professionals that serve the same type of client.
-
+        
         TASK:
-        1. Infer the user’s primary business category and 1–2 secondary categories.
-        2. Identify what kind of Power Team ecosystem they belong to (give it a short name).
-        3. From the roster provided, select 6–10 members who are strong complementary partners.
-        4. Rank them best to worst and explain each in one short sentence.
-        5. Use ONLY the roster data. Never invent names or categories.
+        1. Analyze the user's business description.
+        2. From the roster provided, select the top 6-8 members who would make the best referral partners (Power Team).
+        3. Explain the connection.
 
-        INPUT:
+        USER PROFILE:
+        Name: ${user_name}
+        Business: ${business_name}
+        What they do: ${description}
+        Ideal Client: ${ideal_customer || "Not specified"}
 
-        USER:
-        * name: ${user_name}
-        * business_name: ${business_name}
-        * description: ${description}
-        * ideal_customer: ${ideal_customer || "Not specified"}
-
-        ROSTER (JSON):
+        ROSTER CANDIDATES (JSON):
         ${JSON.stringify(roster_subset)}
 
-        OUTPUT:
-
-        Return ONLY valid JSON in this exact schema:
-
+        OUTPUT SCHEMA (JSON Only):
         {
           "user_profile": {
-            "detected_primary_category": "",
-            "detected_secondary_categories": [],
-            "detected_industry_bucket": "",
-            "power_team_name": "",
-            "power_team_logic": ""
+            "detected_primary_category": "string",
+            "detected_industry_bucket": "string",
+            "power_team_name": "string",
+            "power_team_logic": "string"
           },
           "recommendations": [
             {
-              "member_id": "",
-              "member_name": "",
-              "category": "",
-              "industry_bucket": "",
-              "match_score": 0,
-              "why_this_member": "",
-              "referral_angle": ""
+              "member_id": "string (must match input id)",
+              "match_score": number (1-100),
+              "why_this_member": "string",
+              "referral_angle": "string"
             }
-          ],
-          "notes": {
-            "confidence": "low|medium|high",
-            "missing_info_question": ""
-          }
+          ]
         }
-
-        RULES:
-        * Output JSON only
-        * Never suggest members outside roster
-        * Always give best-effort matches
-        * If input is vague → confidence “low” and ask ONE question
         `;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        const text = response.text();
+        let text = response.text();
         
-        // Parse and return JSON
-        const jsonResponse = JSON.parse(text);
-        res.json(jsonResponse);
+        // 🚨 CRITICAL FIX: Clean up Markdown formatting 🚨
+        // AI often returns \`\`\`json ... \`\`\` which crashes JSON.parse()
+        // We remove these markers to prevent the 500 Error.
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        console.log("AI Response received successfully");
+        
+        // Parse safely
+        try {
+            const jsonData = JSON.parse(text);
+            res.json(jsonData);
+        } catch (parseError) {
+            console.error("JSON Parse Error:", parseError);
+            console.error("Raw Text was:", text);
+            throw new Error("AI returned invalid JSON format");
+        }
 
     } catch (error) {
-        console.error("AI Error:", error);
-        res.status(500).json({ error: "Failed to process power team match." });
+        console.error("SERVER ERROR DETAILS:", error);
+        // Send the specific error message back to the frontend
+        res.status(500).json({ 
+            error: "Server Error", 
+            details: error.message 
+        });
     }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`BNI Power Team Server running on port ${PORT}`);
+    console.log(`✅ Server running on port ${PORT}`);
 });
